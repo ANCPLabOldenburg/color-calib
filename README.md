@@ -43,10 +43,10 @@ The results can be used to create an ICC profile for the monitor with [Argyll CM
 
 ## Dependencies:
 
-serial  Communication with PR 650
-matplotlib  Display the color patches
-numpy   Data structures and handling
-dill    Dump all variables of a session. Not elegant but effective.
-time    Timers
-subprocess  Run Argyll commands from within python
-[Argyll CMS](https://www.argyllcms.com/)   A suite of software tools for color management. Unfortunately it does not support the PR 650 
+serial  Communication with PR 650\
+matplotlib  Display the color patches\
+numpy   Data structures and handling\
+dill    Dump all variables of a session. Not elegant but effective.\
+time    Timers\
+subprocess  Run Argyll commands from within python\
+[Argyll CMS](https://www.argyllcms.com/)   A suite of software tools for color management. Unfortunately it does not support the PR 650\
