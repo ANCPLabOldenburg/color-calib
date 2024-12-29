@@ -2,11 +2,16 @@
 ### with a PR 650 spectroradiometer
 This repo implements the workflow and the functionality required to automatcally characterize luminance, CIE and spectral color responses of a monitor. The results can be used to create an ICC profile for the monitor with [Argyll CMS](https://www.argyllcms.com/). The core script will do that if 'colprof' is on the binary path. Otherwise you are left with the measurements. You can always run 'colprof' later.  
 
-The code was written because available tools did not support the Spectrascan PR 650 spectroradiometer (a fact, not a complaint). It comprises all steps from setting up the measurement device, having a set to RGB values to measure, loop ing over the list displaying each color on the screen, taking a measurement, stornig the data, writing them to a ti3 file Argyll's coloprof can use to write an ICC profile.\n
+The code was written because available tools did not support the Spectrascan PR 650 spectroradiometer (a fact, not a complaint). It comprises all steps from setting up the measurement device, having a set to RGB values to measure, loop ing over the list displaying each color on the screen, taking a measurement, stornig the data, writing them to a ti3 file Argyll's coloprof can use to write an ICC profile.
+
 Others might find this repo a useful starting point (issues/pull requests welcome) to 
+
 a) use their own PR 650 for monitor profiling or calibration 
+
 b) adapt the code to support more previously unsupported colorimeters or spectroradiometers.
+
 The only thing that is needed from the device are the CIE 1931 XYZ coordinates for each color patch measured and a communication protocol to control the device 
+
 The results can be used to create an ICC profile for the monitor with [Argyll CMS](https://www.argyllcms.com/)
 
 ## How to:
