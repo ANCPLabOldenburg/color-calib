@@ -2,8 +2,6 @@ import serial, time
 import numpy as np
 from  matplotlib import pyplot as plt
 import sys 
-import ipdb
-import dill
 
 class pr650():
 
