@@ -1,14 +1,15 @@
 import serial, time 
 import numpy as np
 from  matplotlib import pyplot as plt
-import dill
 import sys 
 import ipdb
+import dill
 
 class pr650():
 
-	def __init__(self, port="/dev/ttyUSB0"):
-		self.port=port
+	def __init__(self):
+		#self.port=port
+		self.pr650_connected=False
 		self.command_terminator='\r'
 		self.response_codes={'lum_x_y':'1',
 							'XYZ':'2',
@@ -29,22 +30,79 @@ class pr650():
 		self.response_checks={'default_ok':'000\r\n',
 								'measurement_setup_ok':'00\r\n' 
 						}
- 		
-		# open the serial port to  
+ 		# set up ramp vectors 
+		self.color_ramp_log=np.array([0],ndmin=2)
+		self.color_ramp_log=np.append(self.color_ramp_log,(np.round(np.cumprod(np.repeat(1.45,14)))))
+		self.color_ramp_log=np.append(self.color_ramp_log,255)
+		self.color_ramp_dark_augmented=np.round(np.array([0.0, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0])*255)
+		self.color_ramp_equal_steps=np.round(np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0])*255)
+
+		# Figure and axis handles
+		self.ax=[]
+		self.fig=[]
+
+
+		# set up result array and indices
+		self.indices={'colors':[0,1,2],
+				'XYZ':[3,4,5],
+				'x_y':[6,7],
+				'u_v':[8,9],
+				'temp_deviation':[10,11],
+				'quality_unit':[12,13],
+				'intensity':[14],
+				'spectral_i':np.arange(15,116)
+				}
+		self.values=np.array([])
+
+	def make_values_array(self,cols):
+		"""
+			Add rows to the internal results array "values" to store the measurements. Alle entries will be filled with zeros. Thus measurements not entered by the user willshow up as exact zeros.
+
+			Input: 
+			colorr:	A numpy matrix with shape n-by-3 holding the to-be-measured color values.
+
+			Output: None 
+		"""
+		
+		self.values=np.zeros([np.shape(cols)[0],116])
+
+	def open_pr650(self, port="/dev/ttyUSB0"):
+		"""
+			Open the serial port communication to the PR650. On succes the member pr650_connected is set to True
+
+			Inputs:
+			port:		The serial port descriptor. On linux something like: /dev/ttyUSB0 (default)
+
+			Outputs: 	None
+
+			Remarks:
+			On linux you must first find out at which port the pr650 is mounted. 
+			lsusb gives you a hint of its name -> e.g. pl2303 is the driver used
+			dmesg | grep pl2303 | grep -oE 'ttyUSB[^. ]*
+			gives the USB port
+			The function needs the device path e.g. /dev/ttyUSB1
+
+			Normal users do not access to the port. You must set the permission to 
+			sudo chmod 666 /dev/ttyUSB0
+			or make it permanent
+			sudo edit /etc/udev/rules.d/50-myusb.rules
+			KERNEL=="ttyUSB[0-9]*",MODE="0666"
+		"""
+		# open the serial port   
 		try:
-			self.com=serial.Serial(self.port,9600, timeout=10) #open the port
+			self.com=serial.Serial(port,9600, timeout=10) #open the port
 			time.sleep(1)
 			self.com.read(self.com.inWaiting())#empty send buffer
 			self.com.write(str.encode(self.commands['backlight_on']+self.command_terminator))#display light on to bring pr650 in remote mode
 			time.sleep(1)
 			answer=str(self.com.read(self.com.inWaiting()),'utf-8') #The response is a bytes_string. The outer str() turns it into a regular ascii string
-			print("Port write OK: Opened port %s" %self.port)
+			print("Port write OK: Opened port %s" %port)
 			print("Answer: ", answer)
 		except:
-			print("Port write failed: Could not open serial port %s" %self.port)
+			print("Port write failed: Could not open serial port %s" %port)
 			print("1) Check if the port is correct")
 			print("2) Check permissions. You may have to run")
-			print("sudo chmod 666 %s" %self.port)
+			print("sudo chmod 666 %s" %port)
 			self.com.close()
 			print(sys.exc_info()[1])
 			sys.exit()
@@ -62,6 +120,7 @@ class pr650():
 			print("Received: ", answer, " expected: ", self.response_checks['default_ok'])
 
 		#Set up  measurement
+		#Currently only one type supported 
 		time.sleep(1)
 		self.com.read(self.com.inWaiting())#empty send buffer
 		self.com.write(str.encode(self.commands['set_up_measurements']+
@@ -79,7 +138,8 @@ class pr650():
 			sys.exit()
 		else: 
 			print("Measurement parameters set up!")
-			print("Measurement units cd*m^2 or lux")  	
+			print("Measurement units cd*m^2 or lux")
+			self.pr650_connected=True 	
 
 	def send_to_pr650(self,command):
 			self.com.read(self.com.inWaiting()) #empty the response buffer
@@ -244,143 +304,80 @@ class pr650():
 		v=float(response_string[6])
 		return Y,x,y,u,v,quality,unit
 
-"""
-USER PARAMTERS
-""" 
+	def make_color_ramp_from_array(self, ramp_array):
+		"""
+			Make a color ramp from a numpy vector. The color ramp starts at zero and ends at 255. The vector will be copied four times to create a red, green, blue, and grey ramp.a Black [0, 0 ,0] will only be included once. The colors [0,255,255],[255,0,255],[255,255,0],[255,255,255] are added to the end.	
 
-pr650_port="/dev/ttyUSB1"
-monitor_name='T440pPlatypus_20241126' #This will be the file name 
-monitor_setting_contrast=100
-monitor_setting_brightness=100
-monitor_seting_color_temperature=5000
-ambient_light_level_cdm2=0
-#Output from xrandr --verbose
-X_r_gamma=1.0
-X_g_gamma=1.0
-X_b_gamma=1.0
-X_brightness=1.0
-X_matrix=[[1.0, 0.0, 0.0],[0.0, 1.0, 0.0],[0.0, 0.0, 1.0]]
-X_icc_loaded=True 
+			Inputs: 
+			ramp_array: A vector with the color values. Zero must be included in the first position.
 
-""" 
-Prepare measurement 
-"""
+			Output:
+			cols: 		A matrix holding the rgb-values of four color ramps. Black [0, 0, 0] is only oncluded in the first ramp
+		"""
 
-# Set up pr650 
-device=pr650(pr650_port) # this intializes the device 
-# set up RGB array
-color_ramp=np.array([0],ndmin=2)
-color_ramp=np.append(color_ramp,(np.round(np.cumproduct(np.repeat(1.45,14)))))
-color_ramp=np.append(color_ramp,255)
-red_ramp=np.zeros([len(color_ramp),3])
-red_ramp[:,0]=color_ramp
-green_ramp=red_ramp[1:,[1,0,2]]
-blue_ramp=red_ramp[1:,[1,2,0]]
-colors=np.append(np.append(red_ramp,green_ramp,axis=0),blue_ramp,axis=0)
-colors=np.append([[0,255,255],[255,0,255],[255,255,0],[255,255,255]],colors,axis=0)
+		red_ramp=np.zeros([len(ramp_array),3])
+		red_ramp[:,0]=ramp_array
+		green_ramp=red_ramp[1:,[1,0,2]]
+		blue_ramp=red_ramp[1:,[1,2,0]]
+		grey_ramp=np.vstack((green_ramp[:,1],green_ramp[:,1],green_ramp[:,1])).T 
+		cols=np.append(np.append(np.append(red_ramp,green_ramp,axis=0),blue_ramp,axis=0),grey_ramp,axis=0)
+		cols=np.append([[0,255,255],[255,0,255],[255,255,0]],cols,axis=0)
+		return cols
+	
+	def read_rgb_from_ti1(self,file_name):
+		"""
+			Reads RGB values from a file generated by targen (Argyll CMS package)
+			Created e.g by targen -v -d 3 testPatches
+			Keeps only the RGB values and rescales them between 0-255
 
-# set up result array and indices
-values=np.zeros([np.shape(colors)[0],116])
-indices={'colors':[0,1,2],
-		'XYZ':[3,4,5],
-		'x_y':[6,7],
-		'u_v':[8,9],
-		'temp_deviation':[10,11],
-		'quality_unit':[12,13],
-		'intensity':[14],
-		'spectral_i':np.arange(15,116)
-		}
+			Inputs:
+			file_name: The mane of the *.ti1 file
 
-#Set up drawing rectangles
-#%matplotlib 
-#equires ipython, activates interactive plpotting in a figure that can be moved to the place where we want to measure
-fig, ax = plt.subplots()
-fig.set_facecolor([0,0,0]) #fgure background to black
-ax.set_facecolor([0,0,0]) #axis background to black
-rectangle=plt.Rectangle((0,0),1,1,facecolor=[1,1,1])
-ax.add_patch(rectangle)
-plt.draw()
-plt.pause(1)
+			Outputs:
+			cols: 		A numpy array with the rgb values of a patch in each row
+		"""
 
-"""
-User adjusts figure and starts
-"""
+		file = open(file_name, 'r')
+		lines = file.readlines()
+		file.close()
+		rgb=[]
+		for line in lines:
+			if line[0].isdigit():
+				tmp=line.split()
+				rgb.append(tmp[1:4])
 
-print("Adjust figure position and PR650.Then press a key to start measurement.")
-input()
-print("Starting measuremnt")
+		return np.round(np.array(rgb, dtype='float')/100*255)
 
-"""
-Start measuring
-"""
+	def make_rectangle(self):
+		"""
+		Makes a figure to show the colored rectangles for measurements
+		Requires interactive plotting in a figure that can be moved to the place where we want to measure. Likely requires Ipython for that.
 
-# loop over RGB array
-for k in np.arange(np.shape(colors)[0]):
-	print("Next color: ", colors[k,:]/255)
-	#Set patch color
-	ax.clear()
-	ax.set_facecolor([0,0,0])
-	ax.axis('off')
-	rectangle=plt.Rectangle((0,0),1,1,facecolor=colors[k,:]/255)
-	ax.add_patch(rectangle)
-	plt.draw()
-	plt.pause(1)
-	#Take a measurement. Do this only once per color 
-	device.com.read(device.com.inWaiting()) #empty reponse queue	
-	device.send_to_pr650(device.commands['measure']+device.response_codes['lum_x_y_u_v']+device.command_terminator) 
-	#Wait until the measurement is done and PR650 can return something
-	while '' == str(device.com.read(device.com.inWaiting()),'utf-8'):
-		time.sleep(1)
-	#Read lum_x_y_u_v data
-	response=device.receive_from_pr650(device.response_codes['lum_x_y_u_v'])
-	print("lum_x_y_u_v: ", response)
-	#  Parse lum_x_y_u_v data
-	Y,x,y,u,v,quality,unit=device.parse_lum_x_y_u_v(response)
-	#Read lum_x_y_u_v data
-	response=device.receive_from_pr650(device.response_codes['XYZ'])
-	print("XYZ: ", response)
-	#  Parse XYZ data
-	X,Y,Z,quality,unit=device.parse_XYZ(response)
-	#Read lum_temp_deviaton data
-	response=device.receive_from_pr650(device.response_codes['lum_temp_deviation'])
-	print("lum_temp_deviation: ", response)
-	#Parse lum_temp_deviaton data
-	Y,temp,deviation,quality,unit=device.parse_lum_u_v(response)
-	#Read spectral data 
-	response=device.receive_from_pr650(device.response_codes['spectrum'])
-	print("spectrum: ", response)
-	#ipdb.set_trace()
-	#Parse spectral data
-	spectral_i, wavelength, intensity, quality, unit=device.parse_spectrum(response) 
-	if quality ==float(device.response_checks['default_ok']):
-		print(colors[k,:], 'quality OK: ', float(device.response_checks['default_ok']))
-	else:
-		print(colors[k,:], 'quality NOT OK: ', quality)
-	"""
-	Store data in result array
-	"""
-	values[k,indices['colors']]=colors[k,:]
-	values[k,indices['XYZ']]= [X,Y,Z]
-	values[k,indices['x_y']]=[x,y]
-	values[k,indices['u_v']]=[u,v]
-	values[k,indices['temp_deviation']]=[temp,deviation]
-	values[k,indices['quality_unit']]=[quality,unit]
-	values[k,indices['intensity']]=intensity
-	values[k,indices['spectral_i']]=spectral_i
-	""" #test indexes
-	values[k,indices['colors']]=indices['colors']
-	values[k,indices['XYZ']]=indices['XYZ']
-	values[k,indices['x_y']]=indices['x_y']
-	values[k,indices['u_v']]=indices['u_v']
-	values[k,indices['temp_deviation']]=indices['temp_deviation']
-	values[k,indices['quality_unit']]=indices['quality_unit']
-	values[k,indices['intensity']]=indices['intensity']
-	values[k,indices['spectral_i']]=indices['spectral_i']
-	"""
+		This function takes no input and return nothing. The figure and axis i handled internallt.
+		"""
+		
+		self.fig, self.ax = plt.subplots()
+		self.fig.set_facecolor([0,0,0]) #fgure background to black
+		self.ax.set_facecolor([0,0,0]) #axis background to black
+		self.ax.axis('off')
+		rectangle=plt.Rectangle((0,0),1,1,facecolor=[1,1,1])
+		self.ax.add_patch(rectangle)
+		plt.draw()
+		plt.pause(1)
+	
+	def set_rectangle_color(self, color):
+		"""
+		Set the color of the rectangle in a figure.
 
-# save results 
-dill.dump_session(monitor_name+'.dill')
+		Inputs:
+		color:  The rectangle color. A triple with falues between 0...255
 
-#if __name__ == "__main__":
-#    sys.exit(main())
+		"""
+		
+		self.ax.clear()
+		self.ax.set_facecolor([0,0,0])
+		self.rectangle=plt.Rectangle((0,0),1,1,facecolor=color/255)
+		self.ax.add_patch(self.rectangle)
+		plt.draw()
+		plt.pause(1)
 
